@@ -1,0 +1,91 @@
+---
+- hosts: all
+  remote_user: root
+  tasks:
+  - name: Create a new ext4 primary partition
+    community.general.parted:
+      device: /dev/sda
+      number: 1
+      state: present
+      fs_type: ext4
+  - name: Create a ext4 filesystem on /dev/sda1 and check disk blocks
+    community.general.filesystem:
+      fstype: ext4
+      dev: /dev/sda1
+  - name: Create a directory if it does not exist
+    ansible.builtin.file:
+      path: /data
+      state: directory
+      mode: '0755'
+  - name: Mount sda1
+    ansible.posix.mount:
+      path: /data
+      src: /dev/sda1
+      fstype: ext4
+      state: mounted
+  - name: install helm
+    local_action: ansible.builtin.command /usr/local/bin/brew install helm
+    run_once: True
+  - name:  longhorn repo add
+    local_action: ansible.builtin.command /usr/local/bin/helm repo add longhorn https://charts.longhorn.io
+    run_once: True
+  - name: longhorn repo update
+    local_action: ansible.builtin.command /usr/local/bin/helm repo update
+    run_once: True
+  - name: load longhorn values
+    local_action: ansible.builtin.shell /usr/local/bin/helm show values longhorn/longhorn > longhorn.values.yaml
+    run_once: True
+  - name: edit value
+    local_action:
+       module: ansible.builtin.lineinfile
+       path: longhorn.values.yaml
+       insertafter: 'ui:'
+       regexp: 'type: ClusterIP$'
+       line: '    type: NodePort'
+       firstmatch: yes
+    run_once: True
+  - name: edit value
+    local_action:
+       module: ansible.builtin.lineinfile
+       path: longhorn.values.yaml
+       insertafter: 'type: NodePort$'
+       regexp: 'nodePort: null'
+       line: '    nodePort: 30001'
+       firstmatch: yes
+    run_once: True
+  - name: edit value
+    local_action:
+       module: ansible.builtin.lineinfile
+       path: longhorn.values.yaml
+       regexp: 'defaultClassReplicaCount: 3'
+       line: '  defaultClassReplicaCount: 2'
+       firstmatch: yes
+    run_once: True
+  - name: edit value
+    local_action:
+       module: ansible.builtin.lineinfile
+       path: longhorn.values.yaml
+       regexp: ' backupTarget: ~$'
+       line: '  backupTarget: nfs://ostorage.example.com:/ovirt/backup'
+       firstmatch: yes
+    run_once: True
+  - name: edit value
+    local_action:
+       module: ansible.builtin.lineinfile
+       path: longhorn.values.yaml
+       regexp: ' defaultDataPath: ~$'
+       line: '  defaultDataPath: /data'
+       firstmatch: yes
+    run_once: True
+  - name: edit value
+    local_action:
+       module: ansible.builtin.lineinfile
+       path: longhorn.values.yaml
+       regexp: 'defaultDataLocality: ~$'
+       line: '  defaultDataLocality: best-effort'
+       firstmatch: yes
+    run_once: True
+  - name: load longhorn values
+    local_action: ansible.builtin.shell /usr/local/bin/helm install longhorn longhorn/longhorn --values longhorn.values.yaml -n longhorn-storage --create-namespace
+    run_once: True
+   
